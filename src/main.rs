@@ -1,12 +1,14 @@
 mod nostr;
 mod rss;
 mod relay;
+mod summarize;
 
 use secp256k1::SecretKey;
 use tokio;
 use std::str::FromStr;
 use relay::RelayClient;
 use serde_json::json;
+use summarize::Summarizer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -62,43 +64,85 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Starting RSS feed monitoring...");
     
+    let summarizer = if let Ok(ollama_url) = std::env::var("NOSTRSSS_OLLAMA_URL") {
+        Some(Summarizer::new(ollama_url))
+    } else {
+        None
+    };
+
     loop {
         let items = feed_reader.fetch_latest().await?;
         println!("Fetched {} items from feed", items.len());
         
-        for item in items {
-            let content = format!(
-                "{}\n\n{}",
-                item.title().unwrap_or("No title"),
-                item.link().unwrap_or("No link")
-            );
-
-            let mut tags = vec![
-                vec!["client".to_string(), "nostrsss".to_string()],
-                vec!["alt".to_string(), "RSS Feed Update".to_string()]
-            ];
-
-            // Add lightning address if configured
-            if let Ok(lightning_address) = std::env::var("NOSTRSSS_LIGHTNING_ADDRESS") {
-                tags.push(vec!["lud06".to_string(), lightning_address.clone()]);
-                tags.push(vec!["lud16".to_string(), lightning_address.clone()]);
-                tags.push(vec!["zap".to_string(), lightning_address]);
+        let content = if let Some(summarizer) = &summarizer {
+            match summarizer.summarize_feed(&items).await {
+                Ok(summary) => {
+                    let links = items.iter()
+                        .filter_map(|item| item.link())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    
+                    format!(
+                        "Feed Summary:\n\n{}\n\nSources:\n{}",
+                        summary,
+                        links
+                    )
+                },
+                Err(e) => {
+                    eprintln!("Failed to summarize content: {}", e);
+                    format!(
+                        "Latest items:\n\n{}",
+                        items.iter()
+                            .filter_map(|item| {
+                                Some(format!("{}\n{}", 
+                                    item.title().unwrap_or("No title"),
+                                    item.link().unwrap_or("No link")))
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n\n")
+                    )
+                }
             }
+        } else {
+            format!(
+                "Latest items:\n\n{}",
+                items.iter()
+                    .filter_map(|item| {
+                        Some(format!("{}\n{}", 
+                            item.title().unwrap_or("No title"),
+                            item.link().unwrap_or("No link")))
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            )
+        };
 
-            let event = nostr::Event::new(
-                &secret_key,
-                content,
-                1, // kind 1 = text note
-                tags
-            );
+        // Create a single event for the entire feed update
+        let mut tags = vec![
+            vec!["client".to_string(), "nostrsss".to_string()],
+            vec!["alt".to_string(), "RSS Feed Summary".to_string()]
+        ];
 
-            match relay_client.publish_event(event).await {
-                Ok(_) => println!("Successfully published event to relay"),
-                Err(e) => eprintln!("Failed to publish event: {}", e),
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_secs(note_delay_seconds)).await;
+        // Add lightning address if configured
+        if let Ok(lightning_address) = std::env::var("NOSTRSSS_LIGHTNING_ADDRESS") {
+            tags.push(vec!["lud06".to_string(), lightning_address.clone()]);
+            tags.push(vec!["lud16".to_string(), lightning_address.clone()]);
+            tags.push(vec!["zap".to_string(), lightning_address]);
         }
+
+        let event = nostr::Event::new(
+            &secret_key,
+            content,
+            1, // kind 1 = text note
+            tags
+        );
+
+        match relay_client.publish_event(event).await {
+            Ok(_) => println!("Successfully published event to relay"),
+            Err(e) => eprintln!("Failed to publish event: {}", e),
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(note_delay_seconds)).await;
 
         println!("Sleeping for {} seconds before next feed check", feed_check_seconds);
         tokio::time::sleep(tokio::time::Duration::from_secs(feed_check_seconds)).await;
