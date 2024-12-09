@@ -1,10 +1,10 @@
-# nostrsss
+# HYPER_UPPERCUTs
 
 A Rust application that bridges RSS feeds to the Nostr network by automatically publishing new RSS items as Nostr events.
 
 ## Overview
 
-nostrsss monitors an RSS feed and publishes new items to a Nostr relay as text notes (kind 1 events). Each post includes the item's title and link.
+HYPER_UPPERCUTs monitors an RSS feed and publishes new items to a Nostr relay as text notes (kind 1 events). Each post includes the item's title and link.
 
 ## Features
 
@@ -27,17 +27,17 @@ cargo build --release
 The following environment variables can be set:
 
 Required:
-- `NOSTRSSS_SECRET_KEY`: Your Nostr private key (hex format)
-- `NOSTRSSS_FEED_URL`: The URL of the RSS feed to monitor
-- `NOSTRSSS_RELAY_URL`: The WebSocket URL of the Nostr relay to publish to
+- `HYPER_UPPERCUT_SECRET_KEY`: Your Nostr private key (hex format)
+- `HYPER_UPPERCUT_FEED_URL`: The URL of the RSS feed to monitor
+- `HYPER_UPPERCUT_RELAY_URL`: The WebSocket URL of the Nostr relay to publish to
 
 Optional:
-- `NOSTRSSS_FEED_CHECK_SECONDS`: Time between feed checks (default: 10000)
-- `NOSTRSSS_NOTE_DELAY_SECONDS`: Time between publishing notes (default: 60)
-- `NOSTRSSS_PROFILE_NAME`: Name to show in your profile (default: "RSS Bot")
-- `NOSTRSSS_PROFILE_ABOUT`: About text for your profile (default: "I post RSS feed updates to nostr")
-- `NOSTRSSS_PROFILE_PICTURE`: URL to your profile picture (default: none)
-- `NOSTRSSS_LIGHTNING_ADDRESS`: Your Lightning address for receiving zaps (default: none)
+- `HYPER_UPPERCUT_FEED_CHECK_SECONDS`: Time between feed checks (default: 10000)
+- `HYPER_UPPERCUT_NOTE_DELAY_SECONDS`: Time between publishing notes (default: 60)
+- `HYPER_UPPERCUT_PROFILE_NAME`: Name to show in your profile (default: "RSS Bot")
+- `HYPER_UPPERCUT_PROFILE_ABOUT`: About text for your profile (default: "I post RSS feed updates to nostr")
+- `HYPER_UPPERCUT_PROFILE_PICTURE`: URL to your profile picture (default: none)
+- `HYPER_UPPERCUT_LIGHTNING_ADDRESS`: Your Lightning address for receiving zaps (default: none)
 
 ## Usage
 
@@ -59,7 +59,7 @@ The application will:
 
 The project uses several key dependencies (see Cargo.toml):
 
-```6:17:nostrsss/Cargo.toml
+```6:17:HYPER_UPPERCUTs/Cargo.toml
 [dependencies]
 tokio = { version = "1.28", features = ["full"] }
 reqwest = { version = "0.11", features = ["json"] }
@@ -100,6 +100,6 @@ GNU Affero General Public License v3.0
 
 ## Security Notes
 
-- Keep your `NOSTRSSS_SECRET_KEY` secure and never share it
+- Keep your `HYPER_UPPERCUT_SECRET_KEY` secure and never share it
 - Consider running the application in a secure environment
 - Review the RSS feed source as it will be automatically published to your Nostr account
