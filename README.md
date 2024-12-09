@@ -96,7 +96,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is open source. Please add appropriate license information.
+GNU Affero General Public License v3.0
 
 ## Security Notes
 
