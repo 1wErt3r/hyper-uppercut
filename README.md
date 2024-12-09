@@ -24,11 +24,20 @@ cargo build --release
 
 ## Configuration
 
-The following environment variables must be set:
+The following environment variables can be set:
 
+Required:
 - `NOSTRSSS_SECRET_KEY`: Your Nostr private key (hex format)
 - `NOSTRSSS_FEED_URL`: The URL of the RSS feed to monitor
 - `NOSTRSSS_RELAY_URL`: The WebSocket URL of the Nostr relay to publish to
+
+Optional:
+- `NOSTRSSS_FEED_CHECK_SECONDS`: Time between feed checks (default: 10000)
+- `NOSTRSSS_NOTE_DELAY_SECONDS`: Time between publishing notes (default: 60)
+- `NOSTRSSS_PROFILE_NAME`: Name to show in your profile (default: "RSS Bot")
+- `NOSTRSSS_PROFILE_ABOUT`: About text for your profile (default: "I post RSS feed updates to nostr")
+- `NOSTRSSS_PROFILE_PICTURE`: URL to your profile picture (default: none)
+- `NOSTRSSS_LIGHTNING_ADDRESS`: Your Lightning address for receiving zaps (default: none)
 
 ## Usage
 
