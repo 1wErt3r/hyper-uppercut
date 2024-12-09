@@ -82,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Ok(lightning_address) = std::env::var("NOSTRSSS_LIGHTNING_ADDRESS") {
                 tags.push(vec!["lud06".to_string(), lightning_address.clone()]);
                 tags.push(vec!["lud16".to_string(), lightning_address.clone()]);
+                tags.push(vec!["zap".to_string(), lightning_address]);
             }
 
             let event = nostr::Event::new(
