@@ -2,32 +2,41 @@ mod nostr;
 mod rss;
 mod relay;
 mod summarize;
+mod opml;
 
 use secp256k1::SecretKey;
 use tokio;
 use std::str::FromStr;
-use relay::RelayClient;
-use serde_json::json;
+use relay::RelayPool;
 use summarize::Summarizer;
+use opml::OpmlParser;
 use dotenv::dotenv;
+
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load environment variables from .env file
     dotenv().ok();
 
     // Required environment variables
     let secret_key_str = std::env::var("HYPER_UPPERCUT_SECRET_KEY")
         .map_err(|_| "HYPER_UPPERCUT_SECRET_KEY environment variable not set")?;
     let secret_key = SecretKey::from_str(&secret_key_str)?;
-
-    let feed_url = std::env::var("HYPER_UPPERCUT_FEED_URL")
-        .map_err(|_| "HYPER_UPPERCUT_FEED_URL environment variable not set")?;
-    let feed_reader = rss::FeedReader::new(feed_url);
     
-    let relay_url = std::env::var("HYPER_UPPERCUT_RELAY_URL")
-        .map_err(|_| "HYPER_UPPERCUT_RELAY_URL environment variable not set")?;
-    let relay_client = RelayClient::new(relay_url);
+    let relay_urls = std::env::var("HYPER_UPPERCUT_RELAY_URLS")
+        .map_err(|_| "HYPER_UPPERCUT_RELAY_URLS environment variable not set")?
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect::<Vec<_>>();
+
+    println!("Configured relay URLs: {:?}", relay_urls);
+
+    let relay_pool = RelayPool::new(relay_urls);
+
+    let opml_source = std::env::var("HYPER_UPPERCUT_OPML_SOURCE")
+        .map_err(|_| "HYPER_UPPERCUT_OPML_SOURCE environment variable not set")?;
+
+    let ollama_url = std::env::var("HYPER_UPPERCUT_OLLAMA_URL")
+        .map_err(|_| "HYPER_UPPERCUT_OLLAMA_URL environment variable not set")?;
 
     // Optional environment variables with defaults
     let feed_check_seconds = std::env::var("HYPER_UPPERCUT_FEED_CHECK_SECONDS")
@@ -38,96 +47,102 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "60".to_string())
         .parse::<u64>()?;
 
-    // Profile metadata
-    let profile_name = std::env::var("HYPER_UPPERCUT_PROFILE_NAME")
-        .unwrap_or_else(|_| "RSS Bot".to_string());
-    let profile_about = std::env::var("HYPER_UPPERCUT_PROFILE_ABOUT")
-        .unwrap_or_else(|_| "I post RSS feed updates to nostr".to_string());
-    let profile_picture = std::env::var("HYPER_UPPERCUT_PROFILE_PICTURE")
-        .unwrap_or_else(|_| "".to_string());
+    let process_interval = std::env::var("HYPER_UPPERCUT_PROCESS_INTERVAL_SECONDS")
+        .unwrap_or_else(|_| "30".to_string())
+        .parse::<u64>()?;
 
-    // Publish profile metadata (kind 0 event)
-    let profile = json!({
-        "name": profile_name,
-        "about": profile_about,
-        "picture": profile_picture,
-        "nip05": std::env::var("HYPER_UPPERCUT_NIP05").unwrap_or_else(|_| "".to_string())
-    }).to_string();
+    // Initialize services
+    let opml_parser = OpmlParser::new(ollama_url.clone());
+    let summarizer = Summarizer::new(ollama_url);
 
-    let profile_event = nostr::Event::new(
-        &secret_key,
-        profile,
-        0,  // kind 0 for metadata
-        vec![]
-    );
-
-    match relay_client.publish_event(profile_event).await {
-        Ok(_) => println!("Successfully published profile metadata"),
-        Err(e) => eprintln!("Failed to publish profile: {}", e),
-    }
-
-    println!("Starting RSS feed monitoring...");
-    
-    let summarizer = if let Ok(ollama_url) = std::env::var("HYPER_UPPERCUT_OLLAMA_URL") {
-        Some(Summarizer::new(ollama_url))
-    } else {
-        None
-    };
-
-    loop {
-        let items = feed_reader.fetch_latest().await?;
-        println!("Fetched {} items from feed", items.len());
-        
-        let content = if let Some(summarizer) = &summarizer {
-            match summarizer.summarize_feed(&items).await {
-                Ok(summary) => {
-                    let links = items.iter()
-                        .filter_map(|item| item.link())
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    
-                    format!(
-                        "Feed Summary:\n\n{}\n\nSources:\n{}",
-                        summary,
-                        links
-                    )
-                },
-                Err(e) => {
-                    eprintln!("Failed to summarize content: {}", e);
-                    format!(
-                        "Latest items:\n\n{}",
-                        items.iter()
-                            .filter_map(|item| {
-                                Some(format!("{}\n{}", 
-                                    item.title().unwrap_or("No title"),
-                                    item.link().unwrap_or("No link")))
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n\n")
-                    )
+    // Spawn the outbox processing task
+    tokio::spawn({
+        let relay_pool = relay_pool.clone();
+        async move {
+            loop {
+                if let Err(e) = relay_pool.process_outbox().await {
+                    eprintln!("Error processing outbox: {}", e);
                 }
+                tokio::time::sleep(tokio::time::Duration::from_secs(process_interval)).await;
             }
-        } else {
-            format!(
-                "Latest items:\n\n{}",
-                items.iter()
-                    .filter_map(|item| {
-                        Some(format!("{}\n{}", 
-                            item.title().unwrap_or("No title"),
-                            item.link().unwrap_or("No link")))
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n\n")
-            )
+        }
+    });
+
+    println!("Starting OPML processing...");
+    
+    loop {
+        if let Err(e) = process_feeds(
+            &opml_parser,
+            &summarizer,
+            &relay_pool,
+            &feed_check_seconds,
+            &note_delay_seconds,
+            &opml_source,
+            &secret_key
+        ).await {
+            eprintln!("Error processing feeds: {}", e);
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        }
+    }
+}
+
+async fn process_feeds(
+    opml_parser: &OpmlParser,
+    summarizer: &Summarizer,
+    relay_pool: &RelayPool,
+    feed_check_seconds: &u64,
+    note_delay_seconds: &u64,
+    opml_source: &str,
+    secret_key: &SecretKey
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Fetch and parse OPML
+    let opml_content = opml_parser.fetch_opml(opml_source).await?;
+    let feed_list = opml_parser.parse_opml(&opml_content).await?;
+    
+    println!("Found {} feeds in OPML", feed_list.feeds.len());
+
+    // Process each feed
+    for feed_url in feed_list.feeds {
+        println!("Attempting to fetch feed: {}", feed_url);
+        let feed_reader = rss::FeedReader::new(feed_url.clone());
+        
+        let items = match feed_reader.fetch_latest().await {
+            Ok(mut items) => {
+                println!("Successfully fetched {} items from feed", items.len());
+                items.truncate(3);
+                println!("Truncated to {} items", items.len());
+                items
+            },
+            Err(e) => {
+                eprintln!("Failed to fetch feed {}: {}", feed_url, e);
+                continue;
+            }
         };
 
-        // Create a single event for the entire feed update
+        let content = match summarizer.summarize_feed(&items).await {
+            Ok(summary) => {
+                let links = items.iter()
+                    .filter_map(|item| item.link())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                
+                format!(
+                    "{}",
+                    summary
+                )
+            },
+            Err(e) => {
+                eprintln!("Failed to summarize content: {}", e);
+                continue;
+            }
+        };
+
         let mut tags = vec![
             vec!["client".to_string(), "hyper-uppercut".to_string()],
-            vec!["alt".to_string(), "RSS Feed Summary".to_string()]
+            vec!["alt".to_string(), "RSS Feed Summary".to_string()],
+            vec!["r".to_string(), feed_url.clone()]
         ];
 
-        // Add lightning address if configured
         if let Ok(lightning_address) = std::env::var("HYPER_UPPERCUT_LIGHTNING_ADDRESS") {
             tags.push(vec!["lud06".to_string(), lightning_address.clone()]);
             tags.push(vec!["lud16".to_string(), lightning_address.clone()]);
@@ -135,23 +150,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let event = nostr::Event::new(
-            &secret_key,
+            secret_key,
             content,
-            1, // kind 1 = text note
+            1,
             tags
         );
 
-        match relay_client.publish_event(event.clone()).await {
-            Ok(_) => {
-                println!("Successfully published event to relay");
-                println!("Event JSON:\n{}", serde_json::to_string_pretty(&event).unwrap());
-            },
-            Err(e) => eprintln!("Failed to publish event: {}", e),
-        }
-
-        tokio::time::sleep(tokio::time::Duration::from_secs(note_delay_seconds)).await;
-
-        println!("Sleeping for {} seconds before next feed check", feed_check_seconds);
-        tokio::time::sleep(tokio::time::Duration::from_secs(feed_check_seconds)).await;
+        relay_pool.add_to_outbox(event).await;
+        println!("Added event to outbox for feed: {}", feed_url);
+        tokio::time::sleep(tokio::time::Duration::from_secs(*note_delay_seconds)).await;
     }
+
+    println!("Sleeping for {} seconds before next OPML check", feed_check_seconds);
+    tokio::time::sleep(tokio::time::Duration::from_secs(*feed_check_seconds)).await;
+    Ok(())
 } 

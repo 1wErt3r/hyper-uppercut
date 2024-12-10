@@ -24,12 +24,12 @@ impl Summarizer {
             .join("\n---\n");
 
         let prompt = format!(
-            "Please provide a concise summary of these RSS feed items in 2-3 sentences:\n\n{}",
+            "Please provide a concise summary of these RSS feed items in 2-3 sentences. Don't include links or other external references. This should only be text.\n\n{}",
             combined_text
         );
 
         let request = GenerationRequest::new(
-            "llama3.2".to_string(),
+            "qwen2.5".to_string(),
             prompt,
         );
 
