@@ -141,8 +141,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tags
         );
 
-        match relay_client.publish_event(event).await {
-            Ok(_) => println!("Successfully published event to relay"),
+        match relay_client.publish_event(event.clone()).await {
+            Ok(_) => {
+                println!("Successfully published event to relay");
+                println!("Event JSON:\n{}", serde_json::to_string_pretty(&event).unwrap());
+            },
             Err(e) => eprintln!("Failed to publish event: {}", e),
         }
 

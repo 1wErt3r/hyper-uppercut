@@ -615,6 +615,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyper-uppercut"
+version = "0.1.0"
+dependencies = [
+ "dotenv",
+ "futures-util",
+ "hex",
+ "ollama-rs",
+ "reqwest 0.11.27",
+ "rss",
+ "secp256k1",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tokio-tungstenite",
+ "url",
+]
+
+[[package]]
 name = "hyper-util"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -898,25 +917,6 @@ name = "never"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c96aba5aa877601bb3f6dd6a63a969e1f82e60646e81e71b14496995e9853c91"
-
-[[package]]
-name = "nostrsss"
-version = "0.1.0"
-dependencies = [
- "dotenv",
- "futures-util",
- "hex",
- "ollama-rs",
- "reqwest 0.11.27",
- "rss",
- "secp256k1",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tokio-tungstenite",
- "url",
-]
 
 [[package]]
 name = "num-traits"

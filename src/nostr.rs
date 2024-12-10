@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Event {
     pub id: String,
     pub pubkey: String,
@@ -16,7 +16,31 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(secret_key: &SecretKey, content: String, kind: u32, tags: Vec<Vec<String>>) -> Self {
+    pub fn new(secret_key: &SecretKey, content: String, kind: u32, mut tags: Vec<Vec<String>>) -> Self {
+        // Add client info tag (NIP-10)
+        tags.push(vec!["client".to_string(), "hyper-uppercut".to_string()]);
+
+        // Add profile name if configured (NIP-01)
+        if let Ok(name) = std::env::var("HYPER_UPPERCUT_PROFILE_NAME") {
+            if !name.is_empty() {
+                tags.push(vec!["name".to_string(), name]);
+            }
+        }
+
+        // Add NIP-05 identifier if configured
+        if let Ok(nip05) = std::env::var("HYPER_UPPERCUT_NIP05") {
+            if !nip05.is_empty() {
+                tags.push(vec!["nip05".to_string(), nip05]);
+            }
+        }
+
+        // Add timestamp for relay hints (NIP-40)
+        tags.push(vec!["published_at".to_string(), SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .to_string()]);
+
         let secp = Secp256k1::new();
         let public_key = PublicKey::from_secret_key(&secp, secret_key);
         
